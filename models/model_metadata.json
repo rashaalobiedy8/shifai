@@ -1,0 +1,30 @@
+{
+  "trained_at": "2026-09-28T12:04:54.620996",
+  "n_samples": 200,
+  "n_features": 5,
+  "feature_names": [
+    "Age",
+    "Sex_encoded",
+    "BP_encoded",
+    "Cholesterol_encoded",
+    "Na_to_K"
+  ],
+  "test_accuracy": 1.0,
+  "cv_accuracy_mean": 0.9949999999999999,
+  "cv_accuracy_std": 0.010000000000000009,
+  "drug_classes": [
+    "DrugY",
+    "drugA",
+    "drugB",
+    "drugC",
+    "drugX"
+  ],
+  "drug_mapping": {
+    "DrugY": "مجموعة Y (دواء متعدد الاستخدامات)",
+    "drugX": "مجموعة X (مضاد حيوي)",
+    "drugA": "مجموعة A (خافض ضغط)",
+    "drugB": "مجموعة B (منظم سكر)",
+    "drugC": "مجموعة C (لعلاج الكوليسترول)"
+  },
+  "disclaimer": "⚠️ هذا النموذج تجريبي لأغراض العرض فقط، ولا يُستخدم للتشخيص أو العلاج الفعلي. يجب استشارة طبيب مختص."
+}
