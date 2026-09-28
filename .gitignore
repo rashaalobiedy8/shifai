@@ -20,3 +20,6 @@ Thumbs.db
 .ipynb_checkpoints/
 
 data/raw/AHD_english.xlsx
+
+# ملفات المستخدمين (بيانات خاصة)
+data/users/

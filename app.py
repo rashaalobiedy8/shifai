@@ -2,7 +2,10 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import pickle
-from fuzzywuzzy import fuzz
+from rapidfuzz import fuzz
+import sys
+sys.path.insert(0, '.')
+from src import config
 import hashlib
 from datetime import datetime
 
@@ -52,42 +55,87 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ============ تحميل الأنظمة ============
+# ============ تحميل الأنظمة ============
 @st.cache_resource
 def load_systems():
     systems = {}
-    
+
+    # --- الموديل ---
     try:
-        with open('drug_prediction_model.pkl', 'rb') as f:
+        with open(config.MODEL_FILE, 'rb') as f:
             systems['drug_model'] = pickle.load(f)
-    except:
+        print(f"✅ الموديل محمّل: {config.MODEL_FILE}")
+    except Exception as e:
         systems['drug_model'] = None
-    
+        print(f"❌ خطأ في الموديل: {e}")
+
+    # --- التفاعلات ---
     try:
-        systems['interactions'] = pd.read_excel('db_drug_interactions.xlsx')
-    except:
+        systems['interactions'] = pd.read_excel(config.INTERACTIONS_FILE)
+        print(f"✅ التفاعلات: {len(systems['interactions'])} صف")
+    except Exception as e:
         systems['interactions'] = None
-    
+        print(f"❌ خطأ في التفاعلات: {e}")
+
+    # --- PK-DDI ---
     try:
-        systems['pk_ddi'] = pd.read_excel('PK-DDI DB.xlsx')
-    except:
+        systems['pk_ddi'] = pd.read_excel(config.PK_DDI_FILE)
+        print(f"✅ PK-DDI: {len(systems['pk_ddi'])} صف")
+    except Exception as e:
         systems['pk_ddi'] = None
-    
+        print(f"❌ خطأ في PK-DDI: {e}")
+
+    # --- QA ---
     try:
-        systems['qa_data'] = pd.read_excel('AHD_english_small.xlsx')
-    except:
+        systems['qa_data'] = pd.read_csv(config.QA_DATA_FILE)
+        print(f"✅ QA: {len(systems['qa_data'])} سؤال")
+    except Exception as e:
         systems['qa_data'] = None
-    
+        print(f"❌ خطأ في QA: {e}")
+
+    # --- Interaction Checker ---
+    try:
+        from src.interactions import InteractionChecker
+        systems['interaction_checker'] = InteractionChecker()
+        print("✅ InteractionChecker جاهز")
+    except Exception as e:
+        systems['interaction_checker'] = None
+        print(f"❌ خطأ في InteractionChecker: {e}")
+
+    # --- Drug Info Checker ---
+    try:
+        from src.drug_info import DrugInfoChecker
+        systems['drug_info_checker'] = DrugInfoChecker()
+        print("✅ DrugInfoChecker جاهز")
+    except Exception as e:
+        systems['drug_info_checker'] = None
+        print(f"❌ خطأ في DrugInfoChecker: {e}")
+
+    # --- الصيدليات ---
     systems['pharmacies'] = [
         {'name': 'صيدلية الأمل', 'location': 'شارع جمال عبد الناصر', 'phone': '061-1234567', 'hours': '8:00 - 22:00'},
         {'name': 'صيدلية الشفاء', 'location': 'شارع عمر المختار', 'phone': '061-7654321', 'hours': '24 ساعة'},
         {'name': 'صيدلية بنغازي', 'location': 'شارع الاستقلال', 'phone': '061-9876543', 'hours': '9:00 - 23:00'},
         {'name': 'صيدلية السلام', 'location': 'شارع فلسطين', 'phone': '061-3456789', 'hours': '8:00 - 21:00'},
-        {'name': 'صيدلية الحياة', 'location': 'طريق المطار', 'phone': '061-2345678', 'hours': '10:00 - 22:00'},
+        {'name': 'صيدلية النور', 'location': 'شارع دبي', 'phone': '061-2345678', 'hours': '10:00 - 22:00'},
     ]
-    
+
+    # --- المخزون ---
     np.random.seed(42)
-    medicines = ['باراسيتامول', 'إيبوبروفين', 'أموكسيسيلين', 'أوميبرازول', 'ميتفورمين',
-                 'أسبرين', 'وارفارين', 'أتورفاستاتين', 'أملوديبين', 'ليسينوبريل']
+    medicines = [
+    'باراسيتامول', 'بنادول', 'Panadol', 'أدول', 'Adol',
+    'إيبوبروفين', 'بروفين', 'Brufen',
+    'أسبرين', 'Aspirin',
+    'أموكسيسيلين', 'Amoxicillin',
+    'أوميبرازول', 'Omeprazole',
+    'أتورفاستاتين', 'Atorvastatin',
+    'ميتفورمين', 'Metformin', 'غلوكوفاج',
+    'أملوديبين', 'Amlodipine',
+    'وارفارين', 'Warfarin',
+    'سيتيريزين', 'Cetirizine',
+    'فولتارين', 'Voltaren',
+    'كونكور', 'Concor',
+]
     inventory = {}
     for pharm in systems['pharmacies']:
         inventory[pharm['name']] = {}
@@ -97,8 +145,20 @@ def load_systems():
                 'quantity': int(np.random.randint(20, 150))
             }
     systems['inventory'] = inventory
-    
+
     return systems
+    inventory = {}
+    for pharm in systems['pharmacies']:
+        inventory[pharm['name']] = {}
+        for med in medicines:
+            inventory[pharm['name']][med] = {
+                'price': round(np.random.uniform(10, 60), 2),
+                'quantity': int(np.random.randint(20, 150))
+            }
+    systems['inventory'] = inventory
+
+    return systems
+
 
 systems = load_systems()
 
