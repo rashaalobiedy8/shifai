@@ -32,8 +32,13 @@ def make_qr_image(data: str, box_size: int = 10, border: int = 4) -> Image.Image
     return qr.make_image(fill_color="black", back_color="white").convert("RGB")
 
 
-def make_patient_qr(patient_id: str) -> Image.Image:
-    return make_qr_image(f"{SHIFAI_SCHEME}{patient_id}")
+def make_patient_qr(patient_id: str, base_url: str = None) -> Image.Image:
+    """QR برابط HTTPS يفتح التطبيق على ملف المريض مباشرة."""
+    if base_url is None:
+        base_url = "https://shifai-libya.streamlit.app"
+    url_base = base_url.rstrip("/")
+    url = f"{url_base}/?patient={patient_id}"
+    return make_qr_image(url)
 
 
 # ============================================================
@@ -65,9 +70,20 @@ def qr_to_png_bytes(img: Image.Image) -> bytes:
     return buf.getvalue()
 
 
-def parse_qr_text(text: str) -> Optional[Dict[str, str]]:
+def parse_qr_text(text: str):
     """يحلّل النص المستخرج من QR."""
     text = (text or "").strip()
+
+    # رابط HTTPS الجديد: https://shifai-libya.streamlit.app/?patient=xxx
+    if "?patient=" in text:
+        try:
+            pid = text.split("?patient=")[1].split("&")[0].strip()
+            if pid:
+                return {"kind": "patient", "patient_id": pid}
+        except Exception:
+            pass
+
+    # الروابط القديمة (للتوافق مع QRs قديمة)
     if text.startswith(SHIFAI_SCHEME):
         pid = text[len(SHIFAI_SCHEME):].strip()
         return {"kind": "patient", "patient_id": pid} if pid else None

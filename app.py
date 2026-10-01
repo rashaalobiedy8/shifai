@@ -24,6 +24,15 @@ st.set_page_config(
     layout="wide"
 )
 
+# ============ قراءة patient_id من رابط QR ============
+try:
+    _qp = st.query_params
+    _auto_pid = _qp.get("patient", None)
+    if _auto_pid:
+        st.session_state["_auto_scan_pid"] = _auto_pid
+except Exception:
+    pass
+
 # ============ CSS عربي ============
 st.markdown("""
 <style>
@@ -296,7 +305,21 @@ with tab1:
     with sub_scan:
         st.header("🩺 مسح QR (للطبيب)")
         st.caption("الصقي هنا النص المستخرج من ماسح QR")
-
+                # فحص تلقائي: لو جاي patient_id من رابط QR
+        auto_pid = st.session_state.pop("_auto_scan_pid", None)
+        if auto_pid:
+            st.success(f"✅ تم استقبال ملف من QR: {auto_pid}")
+            rec = load_record(auto_pid)
+            if rec:
+                _render_patient_record(rec)
+            else:
+                st.warning(
+                    f"⚠️ الملف {auto_pid} غير موجود في هذه الجلسة.\n\n"
+                    "**الحل:** استخدمي QR الكامل، أو أنشئي الملف من نفس الجهاز."
+                )
+            st.markdown("---")
+            st.caption("أو الصقي نص QR يدوياً:")
+            
         qr_text = st.text_area(
             "نص QR",
             height=100,
