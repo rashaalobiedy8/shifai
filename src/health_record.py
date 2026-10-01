@@ -202,3 +202,42 @@ if __name__ == '__main__':
     # تحميل من جديد
     h2 = HealthRecord.load(h.patient_id)
     print('✅ تم التحميل:', h2.get_summary())
+
+    # ============================================================
+# تخزين الملفات في session_state (في الذاكرة فقط)
+# ============================================================
+import streamlit as st
+from typing import Optional
+
+
+def _store_key() -> str:
+    return "_shifai_records_store"
+
+
+def get_store() -> dict:
+    """يعيد قاموس {patient_id: record} من session_state."""
+    if _store_key() not in st.session_state:
+        st.session_state[_store_key()] = {}
+    return st.session_state[_store_key()]
+
+
+def save_record(record: dict) -> None:
+    """يحفظ/يحدّث ملف المريض في الذاكرة."""
+    pid = str(record.get("patient_id", "")).strip()
+    if not pid:
+        raise ValueError("patient_id مطلوب لحفظ الملف")
+    get_store()[pid] = record
+
+
+def load_record(patient_id: str) -> Optional[dict]:
+    """يجلب ملف المريض من الذاكرة."""
+    return get_store().get(str(patient_id).strip())
+
+
+def list_records() -> list:
+    """كل الـ patient_ids المحفوظة (مفيد للاختبار)."""
+    return list(get_store().keys())
+
+
+def record_exists(patient_id: str) -> bool:
+    return str(patient_id).strip() in get_store()

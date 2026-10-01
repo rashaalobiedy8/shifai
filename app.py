@@ -8,6 +8,14 @@ sys.path.insert(0, '.')
 from src import config
 import hashlib
 from datetime import datetime
+from src.qr_utils import (
+    make_patient_qr,
+    make_full_record_qr,
+    qr_to_png_bytes,
+    parse_qr_text,
+    decode_record,
+    estimate_record_qr_ok,
+)
 
 # ============ إعداد الصفحة ============
 st.set_page_config(
@@ -54,7 +62,6 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# ============ تحميل الأنظمة ============
 # ============ تحميل الأنظمة ============
 @st.cache_resource
 def load_systems():
@@ -161,7 +168,17 @@ def load_systems():
 
 
 systems = load_systems()
+# ============ تهيئة مخزن الملفات الصحية ============
+if "health_records" not in st.session_state:
+    st.session_state["health_records"] = {}
 
+def save_record(record: dict) -> None:
+    pid = str(record.get("patient_id", "")).strip()
+    if pid:
+        st.session_state["health_records"][pid] = record
+
+def load_record(patient_id: str):
+    return st.session_state["health_records"].get(str(patient_id).strip())
 # ============ التبويبات ============
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📋 الملف الصحي",
@@ -173,34 +190,172 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
 
 # ============ تبويب 1 ============
 with tab1:
-    st.header("📋 إنشاء ملف صحي جديد")
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        name = st.text_input("الاسم الكامل")
-        age = st.number_input("العمر", min_value=1, max_value=120, value=30)
-        gender = st.selectbox("الجنس", ["ذكر", "أنثى"])
-    with col2:
-        blood = st.selectbox("فصيلة الدم", ["A+","A-","B+","B-","AB+","AB-","O+","O-"])
-        diseases = st.text_input("الأمراض المزمنة (مفصولة بفواصل)")
-        allergies = st.text_input("الحساسية (مفصولة بفواصل)")
-    
-    if st.button("إنشاء الملف الصحي"):
-        if not name:
-            st.error("❌ الرجاء إدخال الاسم")
-        else:
-            patient_id = hashlib.sha256(f"{name}{age}{datetime.now()}".encode()).hexdigest()[:16]
-            st.markdown(f"""
-            <div class="success-box">
-                <h3>✅ تم إنشاء الملف الصحي بنجاح!</h3>
-                <p><strong>رقم الملف:</strong> {patient_id}</p>
-                <p><strong>الاسم:</strong> {name}</p>
-                <p><strong>العمر:</strong> {age} سنة</p>
-                <p><strong>فصيلة الدم:</strong> {blood}</p>
-                <p>🔒 شارك هذا الرقم مع طبيبك للاطلاع على ملفك</p>
-            </div>
-            """, unsafe_allow_html=True)
+    sub_create, sub_qr, sub_scan = st.tabs(
+        ["🆕 إنشاء ملف", "📱 عرض QR", "🩺 مسح QR (للطبيب)"]
+    )
 
+    # ---------- تبويب فرعي 1: إنشاء ملف ----------
+    with sub_create:
+        st.header("📋 إنشاء ملف صحي جديد")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            name = st.text_input("الاسم الكامل")
+            age = st.number_input("العمر", min_value=1, max_value=120, value=30)
+            gender = st.selectbox("الجنس", ["ذكر", "أنثى"])
+        with col2:
+            blood = st.selectbox("فصيلة الدم", ["A+","A-","B+","B-","AB+","AB-","O+","O-"])
+            diseases = st.text_input("الأمراض المزمنة (مفصولة بفواصل)")
+            allergies = st.text_input("الحساسية (مفصولة بفواصل)")
+
+        if st.button("إنشاء الملف الصحي"):
+            if not name:
+                st.error("❌ الرجاء إدخال الاسم")
+            else:
+                patient_id = hashlib.sha256(
+                    f"{name}{age}{datetime.now()}".encode()
+                ).hexdigest()[:16]
+
+                record = {
+                    "patient_id": patient_id,
+                    "name": name,
+                    "age": int(age),
+                    "gender": gender,
+                    "blood_type": blood,
+                    "chronic": [x.strip() for x in diseases.split(",") if x.strip()],
+                    "allergies": [x.strip() for x in allergies.split(",") if x.strip()],
+                    "medications": [],
+                    "notes": "",
+                }
+                save_record(record)
+                st.session_state["_last_pid"] = patient_id
+
+                st.markdown(f"""
+                <div class="success-box">
+                    <h3>✅ تم إنشاء الملف الصحي بنجاح!</h3>
+                    <p><strong>رقم الملف:</strong> {patient_id}</p>
+                    <p><strong>الاسم:</strong> {name}</p>
+                    <p><strong>العمر:</strong> {age} سنة</p>
+                    <p><strong>فصيلة الدم:</strong> {blood}</p>
+                    <p>👉 انتقلي لتبويب «📱 عرض QR» لتوليد كود المشاركة</p>
+                </div>
+                """, unsafe_allow_html=True)
+
+    # ---------- تبويب فرعي 2: عرض QR ----------
+    with sub_qr:
+        st.header("📱 رمز QR للملف الصحي")
+        default_pid = st.session_state.get("_last_pid", "")
+        pid = st.text_input("رقم المريض", value=default_pid, key="qr_pid").strip()
+
+        if not pid:
+            st.info("👆 أدخلي رقم المريض لعرض QR الخاص به")
+        else:
+            record = load_record(pid)
+            if not record:
+                st.error("❌ لا يوجد ملف بهذا الرقم في هذه الجلسة")
+            else:
+                st.markdown("### 🔗 QR أساسي (رابط المريض)")
+                st.caption("خفيف وسريع — يشتغل مع الطبيب على نفس الجهاز/الجلسة")
+
+                img_basic = make_patient_qr(pid)
+                st.image(
+                    qr_to_png_bytes(img_basic),
+                    caption=f"shifai://patient/{pid}",
+                    width=260,
+                )
+                st.download_button(
+                    "⬇️ تنزيل QR أساسي (PNG)",
+                    data=qr_to_png_bytes(img_basic),
+                    file_name=f"shifai_qr_{pid}.png",
+                    mime="image/png",
+                    key="dl_basic",
+                )
+
+                st.markdown("---")
+                st.markdown("### 📦 QR كامل (يحتوي كل بيانات الملف)")
+                st.caption("يعمل على أي جهاز — لكن أكبر حجماً")
+
+                if estimate_record_qr_ok(record):
+                    img_full = make_full_record_qr(record)
+                    st.image(
+                        qr_to_png_bytes(img_full),
+                        caption="QR مضغوط يحتوي الملف كاملاً",
+                        width=320,
+                    )
+                    st.download_button(
+                        "⬇️ تنزيل QR كامل (PNG)",
+                        data=qr_to_png_bytes(img_full),
+                        file_name=f"shifai_fullqr_{pid}.png",
+                        mime="image/png",
+                        key="dl_full",
+                    )
+                else:
+                    st.warning("⚠️ الملف كبير جداً ليُضمَّن في QR كامل. استخدمي QR الأساسي.")
+
+    # ---------- تبويب فرعي 3: مسح QR (للطبيب) ----------
+    with sub_scan:
+        st.header("🩺 مسح QR (للطبيب)")
+        st.caption("الصقي هنا النص المستخرج من ماسح QR")
+
+        qr_text = st.text_area(
+            "نص QR",
+            height=100,
+            key="qr_input",
+            placeholder="shifai://patient/xxxx  أو  shifai://record/xxxx",
+        )
+
+        if st.button("🔍 فحص الملف", key="scan_btn"):
+            parsed = parse_qr_text(qr_text)
+
+            if not parsed:
+                st.error("❌ نص QR غير صالح. تأكدي أنه يبدأ بـ shifai://")
+            elif parsed["kind"] == "patient":
+                pid2 = parsed["patient_id"]
+                rec = load_record(pid2)
+                if rec:
+                    st.success(f"✅ تم العثور على الملف: {pid2}")
+                    _render_patient_record(rec)
+                else:
+                    st.warning(
+                        f"⚠️ الملف {pid2} غير موجود في هذه الجلسة.\n\n"
+                        "اطلبي من المريض QR الكامل أو أنشئي الملف على نفس الجهاز."
+                    )
+            elif parsed["kind"] == "record":
+                try:
+                    rec = decode_record(parsed["token"])
+                    st.success(f"✅ تم فك تشفير الملف: {rec.get('patient_id','؟')}")
+                    _render_patient_record(rec)
+                except Exception as e:
+                    st.error(f"❌ فشل فك التشفير: {e}")
+
+
+def _render_patient_record(rec: dict):
+    """عرض الملف الصحي بشكل مرتّب."""
+    st.markdown("---")
+    st.markdown(f"### 👤 {rec.get('name') or 'بدون اسم'}")
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("رقم المريض", rec.get("patient_id", "-"))
+    c2.metric("العمر", rec.get("age", "-"))
+    c3.metric("فصيلة الدم", rec.get("blood_type") or "-")
+
+    st.markdown(f"**الجنس:** {rec.get('gender') or '-'}")
+
+    for key, label, icon in [
+        ("chronic", "الأمراض المزمنة", "🩺"),
+        ("allergies", "الحساسية", "⚠️"),
+        ("medications", "الأدوية الحالية", "💊"),
+    ]:
+        items = rec.get(key) or []
+        if items:
+            st.markdown(f"**{icon} {label}:**")
+            for it in items:
+                st.markdown(f"- {it}")
+
+    if rec.get("notes"):
+        st.markdown("**📝 ملاحظات:**")
+        st.info(rec["notes"])
+        
 # ============ تبويب 2 ============
 with tab2:
     st.header("💊 فحص التفاعلات الدوائية")
