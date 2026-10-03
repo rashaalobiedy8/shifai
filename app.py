@@ -1,3 +1,4 @@
+from src.qr_utils import patient_url
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -269,7 +270,7 @@ with tab1:
                 img_basic = make_patient_qr(pid)
                 st.image(
                     qr_to_png_bytes(img_basic),
-                    caption=f"shifai://patient/{pid}",
+                    caption=patient_url(pid),
                     width=260,
                 )
                 st.download_button(
@@ -324,14 +325,14 @@ with tab1:
             "نص QR",
             height=100,
             key="qr_input",
-            placeholder="shifai://patient/xxxx  أو  shifai://record/xxxx",
+            placeholder="https://shifai-libya.streamlit.app/?patient=xxxx",
         )
 
         if st.button("🔍 فحص الملف", key="scan_btn"):
             parsed = parse_qr_text(qr_text)
 
             if not parsed:
-                st.error("❌ نص QR غير صالح. تأكدي أنه يبدأ بـ shifai://")
+                st.error("❌ رمز QR غير صالح. تأكدي أنه يبدأ بـ https://shifai-libya.streamlit.app/?patient=")
             elif parsed["kind"] == "patient":
                 pid2 = parsed["patient_id"]
                 rec = load_record(pid2)
