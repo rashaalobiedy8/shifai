@@ -1,8 +1,10 @@
+# -*- coding: utf-8 -*-
 from src.qr_utils import patient_url
 import streamlit as st
 import pandas as pd
 import numpy as np
 import pickle
+import os
 from rapidfuzz import fuzz
 import sys
 sys.path.insert(0, '.')
@@ -17,6 +19,36 @@ from src.qr_utils import (
     decode_record,
     estimate_record_qr_ok,
 )
+from src.storage import get_storage
+
+
+def _render_patient_record(rec: dict):
+    """عرض الملف الصحي بشكل مرتّب."""
+    st.markdown("---")
+    st.markdown(f"### 👤 {rec.get('name') or 'بدون اسم'}")
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("رقم المريض", rec.get("patient_id", "-"))
+    c2.metric("العمر", rec.get("age", "-"))
+    c3.metric("فصيلة الدم", rec.get("blood_type") or "-")
+
+    st.markdown(f"**الجنس:** {rec.get('gender') or '-'}")
+
+    for key, label, icon in [
+        ("chronic", "الأمراض المزمنة", "🩺"),
+        ("allergies", "الحساسية", "⚠️"),
+        ("medications", "الأدوية الحالية", "💊"),
+    ]:
+        items = rec.get(key) or []
+        if items:
+            st.markdown(f"**{icon} {label}:**")
+            for it in items:
+                st.markdown(f"- {it}")
+
+    if rec.get("notes"):
+        st.markdown("**📝 ملاحظات:**")
+        st.info(rec["notes"])
+
 
 # ============ إعداد الصفحة ============
 st.set_page_config(
@@ -25,14 +57,20 @@ st.set_page_config(
     layout="wide"
 )
 
+# ============ تهيئة طبقة التخزين ============
+_store = get_storage()
+
 # ============ قراءة patient_id من رابط QR ============
 try:
-    _qp = st.query_params
-    _auto_pid = _qp.get("patient", None)
-    if _auto_pid:
-        st.session_state["_auto_scan_pid"] = _auto_pid
+    _auto_pid = st.query_params.get("patient", None)
 except Exception:
-    pass
+    _auto_pid = None
+
+if _auto_pid:
+    st.session_state["_url_patient_id"] = _auto_pid
+
+# نبقيه محفوظاً في session_state حتى يبقى ظاهراً بعد أي rerun
+_url_pid = st.session_state.get("_url_patient_id")
 
 # ============ CSS عربي ============
 st.markdown("""
@@ -63,6 +101,16 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# ============ تحديد التبويب النشط ============
+_tabs_list = ["🩺 الملف الصحي", "💊 التفاعلات", "🔮 التنبؤ", "🔍 البحث", "❓ استفسار"]
+
+if "active_tab" not in st.session_state:
+    st.session_state.active_tab = _tabs_list[0]
+
+# لو جاء من QR → فعّل تبويب الملف الصحي
+if _url_pid:
+    st.session_state.active_tab = _tabs_list[0]
+
 # ============ العنوان ============
 st.markdown("""
 <div class="main-header">
@@ -71,6 +119,7 @@ st.markdown("""
     <p style="font-size: 14px;">فريق Hacktivists | مؤسسة رؤية</p>
 </div>
 """, unsafe_allow_html=True)
+
 
 # ============ تحميل الأنظمة ============
 @st.cache_resource
@@ -140,69 +189,73 @@ def load_systems():
     # --- المخزون ---
     np.random.seed(42)
     medicines = [
-    'باراسيتامول', 'بنادول', 'Panadol', 'أدول', 'Adol',
-    'إيبوبروفين', 'بروفين', 'Brufen',
-    'أسبرين', 'Aspirin',
-    'أموكسيسيلين', 'Amoxicillin',
-    'أوميبرازول', 'Omeprazole',
-    'أتورفاستاتين', 'Atorvastatin',
-    'ميتفورمين', 'Metformin', 'غلوكوفاج',
-    'أملوديبين', 'Amlodipine',
-    'وارفارين', 'Warfarin',
-    'سيتيريزين', 'Cetirizine',
-    'فولتارين', 'Voltaren',
-    'كونكور', 'Concor',
-]
-    inventory = {}
-    for pharm in systems['pharmacies']:
-        inventory[pharm['name']] = {}
-        for med in medicines:
-            inventory[pharm['name']][med] = {
-                'price': round(np.random.uniform(10, 60), 2),
-                'quantity': int(np.random.randint(20, 150))
-            }
+        'باراسيتامول', 'بنادول', 'Panadol', 'أدول', 'Adol',
+        'إيبوبروفين', 'بروفين', 'Brufen',
+        'أسبرين', 'Aspirin',
+        'أموكسيسيلين', 'Amoxicillin',
+        'أوميبرازول', 'Omeprazole',
+        'أتورفاستاتين', 'Atorvastatin',
+        'ميتفورمين', 'Metformin', 'غلوكوفاج',
+        'أملوديبين', 'Amlodipine',
+        'وارفارين', 'Warfarin',
+        'سيتيريزين', 'Cetirizine',
+        'فولتارين', 'Voltaren',
+        'كونكور', 'Concor',
+    ]
+
     systems['inventory'] = inventory
-
     return systems
-    inventory = {}
-    for pharm in systems['pharmacies']:
-        inventory[pharm['name']] = {}
-        for med in medicines:
-            inventory[pharm['name']][med] = {
-                'price': round(np.random.uniform(10, 60), 2),
-                'quantity': int(np.random.randint(20, 150))
-            }
-    systems['inventory'] = inventory
-
-    return systems
-
 
 systems = load_systems()
-# ============ تهيئة مخزن الملفات الصحية ============
-if "health_records" not in st.session_state:
-    st.session_state["health_records"] = {}
 
-def save_record(record: dict) -> None:
-    pid = str(record.get("patient_id", "")).strip()
-    if pid:
-        st.session_state["health_records"][pid] = record
+# ============ التبويبات (radio بدل tabs للتحكم البرمجي) ============
+_active_tab = st.radio(
+    "التنقل",
+    _tabs_list,
+    index=_tabs_list.index(st.session_state.active_tab),
+    horizontal=True,
+    label_visibility="collapsed",
+    key="_nav_radio",
+)
+st.session_state.active_tab = _active_tab
+st.divider()
 
-def load_record(patient_id: str):
-    return st.session_state["health_records"].get(str(patient_id).strip())
-# ============ التبويبات ============
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
-    "📋 الملف الصحي",
-    "💊 التفاعلات الدوائية",
-    "🔮 التنبؤ بالدواء",
-    "🏥 البحث عن دواء",
-    "❓ استفسار طبي"
-])
+tab1_active = _active_tab == "🩺 الملف الصحي"
+tab2_active = _active_tab == "💊 التفاعلات"
+tab3_active = _active_tab == "🔮 التنبؤ"
+tab4_active = _active_tab == "🔍 البحث"
+tab5_active = _active_tab == "❓ استفسار"
 
 # ============ تبويب 1 ============
-with tab1:
-    sub_create, sub_qr, sub_scan = st.tabs(
-        ["🆕 إنشاء ملف", "📱 عرض QR", "🩺 مسح QR (للطبيب)"]
-    )
+if tab1_active:
+    # ═══ لو جاء من QR → اعرض الملف مباشرة في الأعلى ═══
+    if _url_pid:
+        st.markdown(f"### 📱 ملف المريض من QR: `{_url_pid}`")
+
+        _rec = _store.load(_url_pid)
+        if _rec:
+            _render_patient_record(_rec)
+        else:
+            st.warning(
+                f"⚠️ لا يوجد ملف محفوظ للرقم `{_url_pid}` في هذه الجلسة.\n\n"
+                "**السبب:** البيانات حالياً في الذاكرة فقط (session_state).\n"
+                "**الحل:** اطلبي من المريض QR الكامل، أو انتظري خطوة SQLite القادمة."
+            )
+
+        if st.button("🔙 مسح الرابط والعودة", use_container_width=True, key="clear_url_pid"):
+            st.session_state.pop("_url_patient_id", None)
+            try:
+                st.query_params.clear()
+            except Exception:
+                pass
+            st.rerun()
+
+        st.divider()
+
+    # ═══ التبويبات الفرعية الثلاثة تبقى ظاهرة دايماً ═══
+    sub_create, sub_qr, sub_scan = st.tabs([
+        "🆕 إنشاء ملف", "📱 عرض QR", "🩺 مسح QR (للطبيب)"
+    ])
 
     # ---------- تبويب فرعي 1: إنشاء ملف ----------
     with sub_create:
@@ -214,11 +267,11 @@ with tab1:
             age = st.number_input("العمر", min_value=1, max_value=120, value=30)
             gender = st.selectbox("الجنس", ["ذكر", "أنثى"])
         with col2:
-            blood = st.selectbox("فصيلة الدم", ["A+","A-","B+","B-","AB+","AB-","O+","O-"])
+            blood = st.selectbox("فصيلة الدم", ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"])
             diseases = st.text_input("الأمراض المزمنة (مفصولة بفواصل)")
             allergies = st.text_input("الحساسية (مفصولة بفواصل)")
 
-        if st.button("إنشاء الملف الصحي"):
+        if st.button("إنشاء الملف الصحي", key="btn_create_record"):
             if not name:
                 st.error("❌ الرجاء إدخال الاسم")
             else:
@@ -237,20 +290,24 @@ with tab1:
                     "medications": [],
                     "notes": "",
                 }
-                save_record(record)
-                st.session_state["_last_pid"] = patient_id
 
-                st.markdown(f"""
-                <div class="success-box">
-                    <h3>✅ تم إنشاء الملف الصحي بنجاح!</h3>
-                    <p><strong>رقم الملف:</strong> {patient_id}</p>
-                    <p><strong>الاسم:</strong> {name}</p>
-                    <p><strong>العمر:</strong> {age} سنة</p>
-                    <p><strong>فصيلة الدم:</strong> {blood}</p>
-                    <p>👉 انتقلي لتبويب «📱 عرض QR» لتوليد كود المشاركة</p>
-                </div>
-                """, unsafe_allow_html=True)
-
+                # 🔍 تشخيص مباشر
+try:
+    _store.save(patient_id, record)
+    st.session_state["_last_pid"] = patient_id
+    st.markdown(f"""
+    <div class="success-box">
+        <h3>✅ تم إنشاء الملف الصحي بنجاح!</h3>
+        <p><strong>رقم الملف:</strong> {patient_id}</p>
+        <p><strong>الاسم:</strong> {name}</p>
+        <p><strong>العمر:</strong> {age} سنة</p>
+        <p><strong>فصيلة الدم:</strong> {blood}</p>
+        <p>👉 انتقلي لتبويب «📱 عرض QR» لتوليد كود المشاركة</p>
+    </div>
+    """, unsafe_allow_html=True)
+except Exception as e:
+    st.error(f"❌ فشل حفظ الملف: {e}")
+    
     # ---------- تبويب فرعي 2: عرض QR ----------
     with sub_qr:
         st.header("📱 رمز QR للملف الصحي")
@@ -260,7 +317,7 @@ with tab1:
         if not pid:
             st.info("👆 أدخلي رقم المريض لعرض QR الخاص به")
         else:
-            record = load_record(pid)
+            record = _store.load(pid)
             if not record:
                 st.error("❌ لا يوجد ملف بهذا الرقم في هذه الجلسة")
             else:
@@ -306,21 +363,13 @@ with tab1:
     with sub_scan:
         st.header("🩺 مسح QR (للطبيب)")
         st.caption("الصقي هنا النص المستخرج من ماسح QR")
-                # فحص تلقائي: لو جاي patient_id من رابط QR
-        auto_pid = st.session_state.pop("_auto_scan_pid", None)
+
+        auto_pid = st.session_state.get("_auto_scan_pid", None)
         if auto_pid:
-            st.success(f"✅ تم استقبال ملف من QR: {auto_pid}")
-            rec = load_record(auto_pid)
-            if rec:
-                _render_patient_record(rec)
-            else:
-                st.warning(
-                    f"⚠️ الملف {auto_pid} غير موجود في هذه الجلسة.\n\n"
-                    "**الحل:** استخدمي QR الكامل، أو أنشئي الملف من نفس الجهاز."
-                )
+            st.info(f"ℹ️ ملف QR ({auto_pid}) معروض في الأعلى ⬆️")
             st.markdown("---")
             st.caption("أو الصقي نص QR يدوياً:")
-            
+
         qr_text = st.text_area(
             "نص QR",
             height=100,
@@ -335,7 +384,7 @@ with tab1:
                 st.error("❌ رمز QR غير صالح. تأكدي أنه يبدأ بـ https://shifai-libya.streamlit.app/?patient=")
             elif parsed["kind"] == "patient":
                 pid2 = parsed["patient_id"]
-                rec = load_record(pid2)
+                rec = _store.load(pid2)
                 if rec:
                     st.success(f"✅ تم العثور على الملف: {pid2}")
                     _render_patient_record(rec)
@@ -347,67 +396,39 @@ with tab1:
             elif parsed["kind"] == "record":
                 try:
                     rec = decode_record(parsed["token"])
-                    st.success(f"✅ تم فك تشفير الملف: {rec.get('patient_id','؟')}")
+                    st.success(f"✅ تم فك تشفير الملف: {rec.get('patient_id', '؟')}")
                     _render_patient_record(rec)
                 except Exception as e:
                     st.error(f"❌ فشل فك التشفير: {e}")
 
-
-def _render_patient_record(rec: dict):
-    """عرض الملف الصحي بشكل مرتّب."""
-    st.markdown("---")
-    st.markdown(f"### 👤 {rec.get('name') or 'بدون اسم'}")
-
-    c1, c2, c3 = st.columns(3)
-    c1.metric("رقم المريض", rec.get("patient_id", "-"))
-    c2.metric("العمر", rec.get("age", "-"))
-    c3.metric("فصيلة الدم", rec.get("blood_type") or "-")
-
-    st.markdown(f"**الجنس:** {rec.get('gender') or '-'}")
-
-    for key, label, icon in [
-        ("chronic", "الأمراض المزمنة", "🩺"),
-        ("allergies", "الحساسية", "⚠️"),
-        ("medications", "الأدوية الحالية", "💊"),
-    ]:
-        items = rec.get(key) or []
-        if items:
-            st.markdown(f"**{icon} {label}:**")
-            for it in items:
-                st.markdown(f"- {it}")
-
-    if rec.get("notes"):
-        st.markdown("**📝 ملاحظات:**")
-        st.info(rec["notes"])
-        
 # ============ تبويب 2 ============
-with tab2:
+if tab2_active:
     st.header("💊 فحص التفاعلات الدوائية")
-    
-    drugs_input = st.text_input("الأدوية (مفصولة بفواصل)", 
-                                 placeholder="مثال: باراسيتامول, إيبوبروفين, أسبرين")
-    
+
+    drugs_input = st.text_input("الأدوية (مفصولة بفواصل)",
+                                placeholder="مثال: باراسيتامول, إيبوبروفين, أسبرين")
+
     if st.button("فحص التفاعلات"):
         if not drugs_input:
             st.error("❌ الرجاء إدخال الأدوية")
         else:
             drugs = [d.strip() for d in drugs_input.split(',') if d.strip()]
-            
+
             if len(drugs) < 2:
                 st.warning("⚠️ أدخل دواءين على الأقل")
             else:
                 interactions_found = []
                 df = systems.get('interactions')
-                
+
                 if df is not None:
                     cols = df.columns.tolist()
                     for i in range(len(drugs)):
-                        for j in range(i+1, len(drugs)):
+                        for j in range(i + 1, len(drugs)):
                             d1, d2 = drugs[i], drugs[j]
                             match = df[
-                                ((df[cols[0]].astype(str).str.lower() == d1.lower()) & 
+                                ((df[cols[0]].astype(str).str.lower() == d1.lower()) &
                                  (df[cols[1]].astype(str).str.lower() == d2.lower())) |
-                                ((df[cols[0]].astype(str).str.lower() == d2.lower()) & 
+                                ((df[cols[0]].astype(str).str.lower() == d2.lower()) &
                                  (df[cols[1]].astype(str).str.lower() == d1.lower()))
                             ]
                             if not match.empty:
@@ -415,7 +436,7 @@ with tab2:
                                     'd1': d1, 'd2': d2,
                                     'desc': str(match.iloc[0][cols[2]]) if len(cols) > 2 else 'تفاعل موثق'
                                 })
-                
+
                 if interactions_found:
                     for inter in interactions_found:
                         st.markdown(f"""
@@ -432,9 +453,9 @@ with tab2:
                     """, unsafe_allow_html=True)
 
 # ============ تبويب 3 ============
-with tab3:
+if tab3_active:
     st.header("🔮 التنبؤ بالدواء المناسب")
-    
+
     col1, col2 = st.columns(2)
     with col1:
         p_age = st.number_input("العمر", min_value=1, max_value=120, value=45, key='p_age')
@@ -443,7 +464,7 @@ with tab3:
         p_bp = st.selectbox("ضغط الدم", ["HIGH", "LOW", "NORMAL"])
         p_chol = st.selectbox("الكوليسترول", ["HIGH", "NORMAL"])
     p_nak = st.number_input("Na_to_K", min_value=0.0, max_value=50.0, value=12.5, step=0.1)
-    
+
     if st.button("🔮 تنبؤ بالدواء"):
         model_data = systems.get('drug_model')
         if model_data is None:
@@ -455,7 +476,7 @@ with tab3:
                 ch = model_data['le_cholesterol'].transform([p_chol])[0]
                 pred = model_data['model'].predict([[p_age, g, bp, ch, p_nak]])
                 drug = model_data['le_drug'].inverse_transform(pred)[0]
-                
+
                 st.markdown(f"""
                 <div class="success-box">
                     <h2>💊 الدواء المناسب المتوقع</h2>
@@ -467,11 +488,11 @@ with tab3:
                 st.error(f"خطأ: {e}")
 
 # ============ تبويب 4 ============
-with tab4:
+if tab4_active:
     st.header("🏥 البحث عن دواء في الصيدليات")
-    
+
     med_search = st.text_input("اسم الدواء", placeholder="مثال: باراسيتامول")
-    
+
     if st.button("🔍 بحث"):
         if not med_search:
             st.error("❌ الرجاء إدخال اسم الدواء")
@@ -479,7 +500,7 @@ with tab4:
             results = []
             inventory = systems.get('inventory', {})
             pharmacies = systems.get('pharmacies', [])
-            
+
             for pharm in pharmacies:
                 for med_name, info in inventory.get(pharm['name'], {}).items():
                     if med_search.lower() in med_name.lower():
@@ -491,11 +512,11 @@ with tab4:
                             'price': info['price'],
                             'quantity': info['quantity']
                         })
-            
+
             if results:
                 results.sort(key=lambda x: x['price'])
                 st.success(f"✅ تم العثور على {med_search} في {len(results)} صيدلية")
-                
+
                 df_results = pd.DataFrame([{
                     'الصيدلية': r['pharmacy'],
                     'الموقع': r['location'],
@@ -504,17 +525,17 @@ with tab4:
                     'الهاتف': r['phone'],
                     'مواعيد العمل': r['hours']
                 } for r in results])
-                
+
                 st.dataframe(df_results, use_container_width=True)
             else:
                 st.warning(f"لم يتم العثور على {med_search}")
 
 # ============ تبويب 5 ============
-with tab5:
+if tab5_active:
     st.header("❓ اسأل عن استفسارك الطبي")
-    
+
     query = st.text_area("سؤالك", placeholder="اكتب سؤالك الطبي هنا...")
-    
+
     if st.button("📤 إرسال"):
         if not query:
             st.error("❌ الرجاء كتابة سؤالك")
@@ -524,16 +545,16 @@ with tab5:
                 st.warning("⚠️ قاعدة الأسئلة الطبية غير محمّلة")
             else:
                 qa_data = qa_data.dropna(subset=['Question', 'Answer'])
-                
+
                 best_match = None
                 best_score = 0
-                
+
                 for _, row in qa_data.iterrows():
                     score = fuzz.token_sort_ratio(query.lower(), str(row['Question']).lower())
                     if score > best_score:
                         best_score = score
                         best_match = row
-                
+
                 if best_match is not None and best_score > 50:
                     st.markdown(f"""
                     <div class="success-box">

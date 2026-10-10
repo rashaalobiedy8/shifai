@@ -5,6 +5,7 @@
 """
 import json
 import hashlib
+from typing import Optional
 from datetime import datetime
 from pathlib import Path
 
