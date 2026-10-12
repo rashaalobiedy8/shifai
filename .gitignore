@@ -53,3 +53,4 @@ data/users/
 # نسخ احتياطية
 data/processed/*.bak
 data/*.backup
+*.backup

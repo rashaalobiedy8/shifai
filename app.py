@@ -202,6 +202,19 @@ def load_systems():
         'فولتارين', 'Voltaren',
         'كونكور', 'Concor',
     ]
+    
+    # بناء مخزون افتراضي: لكل صيدلية، subset من الأدوية بسعر وكمية عشوائية
+    inventory = {}
+    for pharm in systems['pharmacies']:
+        pharm_inventory = {}
+        for med in medicines:
+            # ~60% احتمال إن الدواء موجود في الصيدلية دي
+            if np.random.random() < 0.6:
+                pharm_inventory[med] = {
+                    "price": round(float(np.random.uniform(3.0, 35.0)), 2),
+                    "quantity": int(np.random.randint(0, 60)),
+                }
+        inventory[pharm['name']] = pharm_inventory
 
     systems['inventory'] = inventory
     return systems
@@ -291,22 +304,22 @@ if tab1_active:
                     "notes": "",
                 }
 
-                # 🔍 تشخيص مباشر
-try:
-    _store.save(patient_id, record)
-    st.session_state["_last_pid"] = patient_id
-    st.markdown(f"""
-    <div class="success-box">
-        <h3>✅ تم إنشاء الملف الصحي بنجاح!</h3>
-        <p><strong>رقم الملف:</strong> {patient_id}</p>
-        <p><strong>الاسم:</strong> {name}</p>
-        <p><strong>العمر:</strong> {age} سنة</p>
-        <p><strong>فصيلة الدم:</strong> {blood}</p>
-        <p>👉 انتقلي لتبويب «📱 عرض QR» لتوليد كود المشاركة</p>
-    </div>
-    """, unsafe_allow_html=True)
-except Exception as e:
-    st.error(f"❌ فشل حفظ الملف: {e}")
+                # 🔍 حفظ الملف
+                try:
+                    _store.save(patient_id, record)
+                    st.session_state["_last_pid"] = patient_id
+                    st.markdown(f"""
+                    <div class="success-box">
+                        <h3>✅ تم إنشاء الملف الصحي بنجاح!</h3>
+                        <p><strong>رقم الملف:</strong> {patient_id}</p>
+                        <p><strong>الاسم:</strong> {name}</p>
+                        <p><strong>العمر:</strong> {age} سنة</p>
+                        <p><strong>فصيلة الدم:</strong> {blood}</p>
+                        <p>👉 انتقلي لتبويب «📱 عرض QR» لتوليد كود المشاركة</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                except Exception as e:
+                    st.error(f"❌ فشل حفظ الملف: {e}")
     
     # ---------- تبويب فرعي 2: عرض QR ----------
     with sub_qr:
