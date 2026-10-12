@@ -1,4 +1,7 @@
-﻿venv/
+﻿# =====================
+# Python
+# =====================
+venv/
 __pycache__/
 *.pyc
 *.pyo
@@ -8,18 +11,45 @@ __pycache__/
 .pytest_cache/
 .coverage
 htmlcov/
+
+# =====================
+# Environment & Secrets
+# =====================
 *.env
 .env
 secrets.json
+.streamlit/secrets.toml
+.streamlit/secrets.yaml
+
+# =====================
+# Databases
+# =====================
 *.db
 *.sqlite3
+
+# =====================
+# OS
+# =====================
 .DS_Store
 Thumbs.db
+
+# =====================
+# IDEs
+# =====================
 .vscode/
 .idea/
+.devcontainer/
 .ipynb_checkpoints/
 
+# =====================
+# Project-specific
+# =====================
+# ملفات بيانات كبيرة - مش محتاجينها على GitHub
 data/raw/AHD_english.xlsx
 
-# ملفات المستخدمين (بيانات خاصة)
+# بيانات مستخدمين خاصة
 data/users/
+
+# نسخ احتياطية
+data/processed/*.bak
+data/*.backup

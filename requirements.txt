@@ -6,3 +6,5 @@ openpyxl
 rapidfuzz
 qrcode[pil]
 Pillow
+supabase
+python-dotenv
