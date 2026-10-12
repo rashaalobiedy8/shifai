@@ -19,6 +19,22 @@ from src.qr_utils import (
     decode_record,
     estimate_record_qr_ok,
 )
+
+# ============ جسر Streamlit Secrets → os.environ ============
+# على Streamlit Cloud: ينسخ كل مفتاح في st.secrets لـ os.environ
+# محلياً: مفيش st.secrets، فبيتجاهل بهدوء ويستخدم .env عن طريق load_dotenv()
+def _bridge_streamlit_secrets_to_env():
+    try:
+        for _k, _v in st.secrets.items():
+            # نحط القيمة في os.environ لو مش موجودة (عشان .env المحلي مايتلغيش)
+            if _k not in os.environ:
+                os.environ[_k] = str(_v)
+    except Exception:
+        # محلياً مفيش secrets.toml → نتجاهل بهدوء
+        pass
+
+
+_bridge_streamlit_secrets_to_env()
 from src.storage import get_storage
 
 
@@ -202,7 +218,7 @@ def load_systems():
         'فولتارين', 'Voltaren',
         'كونكور', 'Concor',
     ]
-    
+
     # بناء مخزون افتراضي: لكل صيدلية، subset من الأدوية بسعر وكمية عشوائية
     inventory = {}
     for pharm in systems['pharmacies']:
