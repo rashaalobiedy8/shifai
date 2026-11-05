@@ -4,6 +4,18 @@ from portals.doctor import show_doctor_portal
 from portals.pharmacy import show_pharmacy_portal
 from shared.ui import apply_custom_css, render_header, render_footer
 
+import streamlit as st
+from shared.ui import apply_custom_css, render_header, render_footer
+
+# --- قراءة الـ URL لو جاي من مسح QR ---
+query_params = st.query_params
+scanned_patient_id = query_params.get("patient")
+
+if scanned_patient_id:
+    # لو اللينك فيه رقم مريض، حول المستخدم لواجهة الطبيب فوراً
+    st.session_state["role"] = "doctor"
+    st.session_state["scanned_patient_id"] = scanned_patient_id
+ 
 # إعدادات الصفحة
 st.set_page_config(page_title="Shifai - شفائي", page_icon="💙", layout="centered")
 
