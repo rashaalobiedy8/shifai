@@ -16,6 +16,16 @@ def _load_drug_model():
         st.error(f"❌ فشل تحميل النموذج: {e}")
         return None
 
+@st.cache_resource
+def _load_interaction_checker():
+    """تحميل فاحص التفاعلات الدوائية (cached)."""
+    try:
+        from src.interactions import InteractionChecker
+        return InteractionChecker(use_fuzzy=True, fuzzy_threshold=85)
+    except Exception as e:
+        st.error(f"❌ فشل تحميل فاحص التفاعلات: {e}")
+        return None
+
 def show_doctor_portal():
     check_role("doctor")
     
@@ -104,14 +114,81 @@ def show_doctor_portal():
                             st.markdown(f"""
                             <div class="success-box">
                                 <h2>💊 الدواء المناسب المتوقع</h2>
-                                <h1 style="color: #27AE60;">{drug}</h1>
-                                <p>⚠️ هذه توصية أولية، يرجى استشارة الطبيب</p>
+                                <h1 style="color: #27AE60;">{drug}</h1
                             </div>
                             """, unsafe_allow_html=True)
                         except Exception as e:
                             st.error(f"❌ خطأ أثناء التنبؤ: {e}")
                 
             with tab2:
-                st.write("هنا سيتم وضع فحص التفاعلات الدوائية قريباً.")
+                st.write("أدخل قائمة أدوية المريض لفحص التفاعلات الدوائية بينها.")
+
+                _checker = _load_interaction_checker()
+                if _checker is None:
+                    st.error("❌ فشل تحميل قاعدة التفاعلات. تأكد من وجود الملف في config.INTERACTIONS_FILE.")
+                else:
+                    # خيارات الإدخال
+                    input_mode = st.radio(
+                        "طريقة إدخال الأدوية:",
+                        ["نص حر (كل دواء في سطر)", "اختيار من قائمة شائعة"],
+                        horizontal=True,
+                        key="doc_inter_input_mode"
+                    )
+
+                    drugs_to_check = []
+
+                    if input_mode == "نص حر (كل دواء في سطر)":
+                        raw_text = st.text_area(
+                            "أدخل أسماء الأدوية (كل دواء في سطر منفصل):",
+                            placeholder="مثال:\nWarfarin\nAspirin\nOmeprazole",
+                            height=150,
+                            key="doc_inter_text"
+                        )
+                        if raw_text:
+                            drugs_to_check = [line.strip() for line in raw_text.splitlines() if line.strip()]
+                    else:
+                        from src.interactions import ARABIC_DRUG_MAP
+                        common_drugs = sorted(set(ARABIC_DRUG_MAP.values()))
+                        selected = st.multiselect(
+                            "اختر الأدوية:",
+                            options=common_drugs,
+                            key="doc_inter_multi"
+                        )
+                        drugs_to_check = selected
+
+                    if st.button("🔍 فحص التفاعلات", key="doc_inter_check_btn"):
+                        if len(drugs_to_check) < 2:
+                            st.warning("⚠️ يجب إدخال دواءين على الأقل للفحص.")
+                        else:
+                            with st.spinner("⏳ جاري الفحص..."):
+                                result = _checker.check_multiple(drugs_to_check)
+
+                            # عرض ملخص
+                            st.info(
+                                f"📊 تم فحص **{result['total_pairs']}** زوج من "
+                                f"**{len(result['drugs_checked'])}** دواء."
+                            )
+
+                            # التفاعلات المكتشفة
+                            if result['interactions']:
+                                st.error(f"⚠️ تم اكتشاف **{len(result['interactions'])}** تفاعل دوائي:")
+                                for i, inter in enumerate(result['interactions'], 1):
+                                    st.markdown(f"""
+                                    <div style="background-color:#FADBD8; padding:12px; border-radius:8px; margin-bottom:10px; border-left:5px solid #E74C3C;">
+                                        <b>تفاعل {i}:</b> <code>{inter['drug1']}</code> ⚡ <code>{inter['drug2']}</code><br>
+                                        <span style="color:#922B21;">{inter['description']}</span>
+                                    </div>
+                                    """, unsafe_allow_html=True)
+                            else:
+                                st.success("✅ لم يتم اكتشاف أي تفاعلات دوائية بين الأدوية المدخلة.")
+
+                            # الأدوية غير المعروفة
+                            if result['unknown_drugs']:
+                                with st.expander(f"❓ أدوية غير معروفة ({len(result['unknown_drugs'])})", expanded=True):
+                                    for u in result['unknown_drugs']:
+                                        st.write(f"**{u['name']}** — غير موجود في القاعدة.")
+                                        if u['suggestions']:
+                                            sugg = ", ".join([f"{s['name']} ({s['score']:.0f}%)" for s in u['suggestions']])
+                                            st.caption(f"💡 اقتراحات: {sugg}")
 
     render_footer()
