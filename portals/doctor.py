@@ -29,7 +29,7 @@ def _load_interaction_checker():
 def show_doctor_portal():
     check_role("doctor")
     
-    # زرار تسجيل الخروج
+    # تسجيل الخروج
     col1, col2 = st.columns([4, 1])
     with col2:
         if st.button("🚪 خروج", use_container_width=True):
