@@ -45,14 +45,27 @@ def _render_inventory_table(items):
     st.dataframe(table_data, use_container_width=True)
 
 
+def _check_single_drug(drug_name, inventory):
+    """التحقق من توفر دواء واحد في المخزون (للبحث اليدوي)."""
+    results = inventory.search_drug(drug_name)
+    if not results:
+        st.error(f"❌ الدواء '{drug_name}' غير موجود في المخزون.")
+        return
+    
+    for item in results:
+        status = "✅ متوفر" if item["quantity"] > 0 else "⚠️ نافد"
+        st.success(f"{status} — **{item['drug_name']}** | الكمية: {item['quantity']} | السعر: {item['price']:.2f}")
+
+
 def _check_prescription_availability(record, inventory):
-    """
-    مقارنة الأدوية الموصوفة للمريض مع المخزون.
-    يفترض أن record.data['prescriptions'] قائمة بأسماء الأدوية.
-    """
+    """مقارنة الأدوية الموصوفة للمريض مع المخزون (إذا كان الحقل موجوداً)."""
     prescriptions = record.data.get("prescriptions", [])
     if not prescriptions:
-        st.info("ℹ️ لا توجد أدوية موصوفة مسجلة لهذا المريض.")
+        st.info("ℹ️ لا توجد أدوية موصوفة مسجلة في ملف المريض.")
+        st.markdown("**البحث اليدوي عن دواء:**")
+        manual_drug = st.text_input("اكتب اسم الدواء للتحقق من توفره:", key="manual_drug_search")
+        if st.button("🔍 التحقق", key="manual_check_btn") and manual_drug:
+            _check_single_drug(manual_drug, inventory)
         return
 
     inventory_names = {item["drug_name"].lower(): item for item in inventory.get_all()}
@@ -125,10 +138,7 @@ def _handle_update(inventory):
     with st.form("update_drug_form"):
         st.subheader(f"✏️ تعديل: {selected}")
         quantity = st.number_input("الكمية", min_value=0, step=1, value=int(current["quantity"]))
-        price = st.number_input(
-            "السعر", min_value=0.0, step=0.5,
-            value=float(current["price"]), format="%.2f"
-        )
+        price = st.number_input("السعر", min_value=0.0, step=0.5, value=float(current["price"]), format="%.2f")
         expiry_date = st.text_input("تاريخ الانتهاء (YYYY-MM-DD)", value=current["expiry_date"])
         manufacturer = st.text_input("الشركة المصنعة", value=current["manufacturer"])
 
@@ -177,7 +187,7 @@ def _handle_search(inventory):
 
 
 # ----------------------------------------------------------------------
-# قسم المريض (خليط أ + ب)
+# قسم المريض
 # ----------------------------------------------------------------------
 def _render_patient_section(inventory):
     st.subheader("🔍 البحث عن مريض")
@@ -212,17 +222,8 @@ def _render_patient_section(inventory):
             st.write(f"**الحساسية:** {', '.join(record.data.get('allergies', [])) or 'لا يوجد'}")
             st.write(f"**الأمراض المزمنة:** {', '.join(record.data.get('chronic_diseases', [])) or 'لا يوجد'}")
 
-    # الأدوية الموصوفة (الجزء أ)
-    with st.expander("💊 الأدوية الموصوفة", expanded=True):
-        prescriptions = record.data.get("prescriptions", [])
-        if prescriptions:
-            for drug in prescriptions:
-                st.write(f"- {drug}")
-        else:
-            st.info("لا توجد أدوية موصوفة مسجلة.")
-
-    # التحقق من توفر الأدوية (الجزء ب)
-    with st.expander("📦 التحقق من توفر الأدوية في المخزون", expanded=True):
+    # التحقق من توفر الأدوية
+    with st.expander("💊 التحقق من الأدوية والمخزون", expanded=True):
         _check_prescription_availability(record, inventory)
 
 
@@ -233,14 +234,17 @@ def show_pharmacy_portal():
     """نقطة الدخول لواجهة الصيدلي."""
     render_header("واجهة الصيدلي — إدارة المخزون")
 
+    # زر الخروج (مطابق لواجهة الطبيب)
+    col1, col2 = st.columns([4, 1])
+    with col2:
+        if st.button("🚪 خروج", use_container_width=True):
+            st.session_state["role"] = None
+            st.rerun()
+
     inventory = _get_inventory()
     if inventory is None:
         render_footer()
         return
-
-    if st.button("🔙 العودة للصفحة الرئيسية"):
-        st.session_state["role"] = None
-        st.rerun()
 
     st.divider()
 
