@@ -335,3 +335,43 @@ def apply_custom_css():
         """,
         unsafe_allow_html=True,
     )
+    # أضف هذا في نهاية ملف shared/ui.py
+
+def render_header(title: str, subtitle: str = ""):
+    """عرض رأس الصفحة الموحد."""
+    st.markdown(
+        f"""
+        <div style="
+            background: linear-gradient(135deg, var(--brand-deep) 0%, var(--brand-primary) 100%);
+            color: white;
+            padding: 20px;
+            border-radius: var(--radius-lg);
+            margin-bottom: 20px;
+            box-shadow: var(--shadow-soft);
+            text-align: center;
+        ">
+            <h1 style="color: white !important; margin: 0; padding: 0; border: none;">{title}</h1>
+            {f'<p style="color: var(--brand-cyan); margin: 5px 0 0 0; font-size: 1.1rem;">{subtitle}</p>' if subtitle else ''}
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+
+def render_footer():
+    """عرض تذييل الصفحة الموحد."""
+    st.markdown(
+        """
+        <div style="
+            text-align: center;
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid var(--border-soft);
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        ">
+            <p>© 2026 Shifai - جميع الحقوق محفوظة</p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
